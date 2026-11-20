@@ -27,6 +27,7 @@ class Commodity:
     unit: str
     eia_series: tuple[str, ...]  # one EIA series id per contract rank 1..N
     expiry_rule: ExpiryRule
+    seasonal: bool = False  # curve has a strong seasonal shape (heating / driving season)
 
 
 def _series(template: str) -> tuple[str, ...]:
@@ -47,6 +48,7 @@ COMMODITIES: dict[str, Commodity] = {
         unit="USD/MMBtu",
         eia_series=_series("NG.RNGC{i}.D"),
         expiry_rule="henry_hub",
+        seasonal=True,
     ),
     "rbob": Commodity(
         key="rbob",
@@ -54,6 +56,7 @@ COMMODITIES: dict[str, Commodity] = {
         unit="USD/gal",
         eia_series=_series("PET.EER_EPMRR_PE{i}_Y35NY_DPG.D"),
         expiry_rule="last_bday_prior_month",
+        seasonal=True,
     ),
     "heating_oil": Commodity(
         key="heating_oil",
@@ -61,5 +64,6 @@ COMMODITIES: dict[str, Commodity] = {
         unit="USD/gal",
         eia_series=_series("PET.EER_EPD2F_PE{i}_Y35NY_DPG.D"),
         expiry_rule="last_bday_prior_month",
+        seasonal=True,
     ),
 }

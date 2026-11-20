@@ -18,6 +18,8 @@ def tsmom_signal(
     if not 0 <= skip < lookback:
         raise ValueError("need 0 <= skip < lookback")
     window = lookback - skip
-    logr = np.log1p(returns)
+    # a futures position can lose more than 100% of notional (WTI, 20 April 2020);
+    # floor at -99% so the log return stays defined
+    logr = np.log1p(returns.clip(lower=-0.99))
     cum = logr.rolling(window, min_periods=int(0.8 * window)).sum()
     return cum.shift(skip)

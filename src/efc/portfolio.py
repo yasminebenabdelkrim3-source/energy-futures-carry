@@ -23,7 +23,7 @@ from efc.config import COMMODITIES
 from efc.data.calendar import expiry_dates
 from efc.data.continuous import held_rank, rolled_returns
 from efc.data.roll_detection import refine_expiries
-from efc.signals.carry import carry_for_held
+from efc.signals.carry import carry_for_held, seasonal_adjusted_carry
 from efc.signals.momentum import tsmom_signal
 
 TRADING_DAYS = 252
@@ -93,16 +93,43 @@ def cross_sectional_rank(signal: pd.DataFrame) -> pd.DataFrame:
     return centred.div(scale, axis=0)
 
 
-def strategy_directions(panel: Panel, carry_smoothing: int = 21) -> dict[str, pd.DataFrame]:
-    """Directions in [-1, 1] for each strategy, known at the close of each day."""
-    carry = panel.carry.rolling(carry_smoothing, min_periods=carry_smoothing // 2).mean()
-    mom = tsmom_signal(panel.returns)
-    ts_carry = np.sign(carry)
-    tsmom = np.sign(mom)
+def seasonal_adjusted_panel(carry: pd.DataFrame) -> pd.DataFrame:
+    """Seasonally adjust the carry of commodities flagged as seasonal in the config."""
+    out = carry.copy()
+    for key in carry.columns:
+        if key in COMMODITIES and COMMODITIES[key].seasonal:
+            out[key] = seasonal_adjusted_carry(carry[key])
+    return out
+
+
+def strategy_directions(
+    panel: Panel,
+    carry_smoothing: int = 21,
+    mom_lookback: int = 252,
+    mom_skip: int = 21,
+) -> dict[str, pd.DataFrame]:
+    """Directions in [-1, 1] for each strategy, known at the close of each day.
+
+    "SA" strategies use the seasonally adjusted carry for natural gas, RBOB and
+    heating oil (see ``signals.carry.seasonal_adjusted_carry``).
+    """
+
+    def smooth(c: pd.DataFrame) -> pd.DataFrame:
+        if carry_smoothing <= 1:
+            return c
+        return c.rolling(carry_smoothing, min_periods=max(1, carry_smoothing // 2)).mean()
+
+    carry = smooth(panel.carry)
+    carry_sa = smooth(seasonal_adjusted_panel(panel.carry))
+    tsmom = np.sign(tsmom_signal(panel.returns, lookback=mom_lookback, skip=mom_skip))
+    ts_carry, ts_carry_sa = np.sign(carry), np.sign(carry_sa)
     return {
         "Long only": panel.returns.notna().astype(float).where(panel.returns.notna()),
         "TS carry": ts_carry,
         "XS carry": cross_sectional_rank(carry),
         "TS momentum": tsmom,
         "Carry + momentum": (ts_carry + tsmom) / 2,
+        "TS carry SA": ts_carry_sa,
+        "XS carry SA": cross_sectional_rank(carry_sa),
+        "Carry SA + momentum": (ts_carry_sa + tsmom) / 2,
     }
