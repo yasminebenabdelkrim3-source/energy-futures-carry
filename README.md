@@ -9,8 +9,8 @@ with time-series momentum, and how robust the result is across regimes:
 the 2008 crash, the 2014–16 oil glut, negative WTI in April 2020, and the
 2022 energy crisis.
 
-> Status: **work in progress**. The data pipeline, signals, backtest engine and
-> first results are in place. Robustness tests come next (see [Roadmap](#roadmap)).
+> Status: data pipeline, signals, backtest, risk analytics and robustness tests
+> are in place. See [Results](#results) and the [Roadmap](#roadmap).
 
 ---
 
@@ -84,12 +84,16 @@ $$
 Positive carry means backwardation and negative carry means contango. Inside the
 roll window the signal uses the c2/c3 spread, i.e. the contract actually held.
 
-### 4. Next: portfolio construction and evaluation
-Cross-sectional and time-series carry, time-series momentum, and a combined
-signal; volatility-scaled positions; transaction costs; walk-forward evaluation;
-Sharpe ratio, drawdowns, turnover, VaR/ES; sub-period and parameter robustness.
+### 4. Portfolio construction and evaluation
+Directions in [−1, 1] come from the sign of carry and of 12-1 momentum, or from
+cross-sectional carry ranks. Each asset is scaled to the same ex-ante
+volatility (60-day EWMA), with leverage capped and monthly rebalancing.
+Weights set at the close of day *t* earn the returns of day *t+1*. Costs are
+charged on every rebalance and every roll. Evaluation covers Sharpe, Sortino,
+drawdowns, historical VaR/ES, Sharpe by sub-period, block-bootstrap confidence
+intervals and one-parameter-at-a-time sensitivity.
 
-## First results
+## Results
 
 Settings were fixed in advance from the literature, with nothing tuned on this
 data: monthly rebalancing, 10% ex-ante volatility per asset (60-day EWMA),
@@ -97,38 +101,55 @@ leverage capped at 2x per asset, roll 5 trading days before expiry, 12-1 month
 momentum, 21-day smoothed carry, and **5 bps per side** on every rebalance and
 every roll. Sample: 1995-01 to 2024-04.
 
+"SA" means *seasonally adjusted* carry. Natural gas, gasoline and heating oil
+curves have a predictable seasonal shape (winter gas, summer gasoline). For
+each calendar month, we subtract the average seasonal deviation of carry
+estimated on **past years only**, so what remains is this year's
+supply/demand signal.
+
 ![Cumulative net returns](reports/figures/cumulative.png)
 
-| Strategy | Sharpe | Ann. return | Ann. vol | Max DD | ES 99% (1d) | Cost drag / yr |
-|---|---:|---:|---:|---:|---:|---:|
-| Long only (equal risk) | 0.17 | 1.1% | 8.4% | −52.1% | 1.9% | 0.4% |
-| **TS carry** | **0.23** | 1.2% | 6.3% | −20.6% | 1.5% | 0.4% |
-| XS carry | −0.03 | −0.2% | 3.5% | −15.2% | 0.8% | 0.3% |
-| TS momentum | 0.07 | 0.2% | 7.4% | −37.6% | 1.6% | 0.4% |
-| Carry + momentum | 0.19 | 0.9% | 5.7% | −21.0% | 1.4% | 0.3% |
+| Strategy | Sharpe | Ann. return | Ann. vol | Max DD | ES 99% (1d) | Bootstrap 95% CI | p-value |
+|---|---:|---:|---:|---:|---:|:---:|---:|
+| Long only (equal risk) | 0.17 | 1.1% | 8.4% | −52.1% | 1.9% | [−0.25, 0.61] | 0.24 |
+| TS carry | 0.23 | 1.2% | 6.3% | −20.6% | 1.5% | [−0.16, 0.57] | 0.10 |
+| XS carry | −0.03 | −0.2% | 3.5% | −15.2% | 0.8% | [−0.40, 0.32] | 0.55 |
+| TS momentum | 0.07 | 0.2% | 7.4% | −37.6% | 1.6% | [−0.31, 0.40] | 0.33 |
+| Carry + momentum | 0.19 | 0.9% | 5.7% | −21.0% | 1.4% | [−0.21, 0.54] | 0.13 |
+| **TS carry SA** | **0.30** | 1.9% | 7.0% | −20.5% | 1.7% | [−0.08, 0.66] | 0.07 |
+| **XS carry SA** | **0.33** | 1.1% | 3.4% | −10.2% | 0.8% | [−0.05, 0.71] | 0.05 |
+| Carry SA + momentum | 0.28 | 1.6% | 6.4% | −20.8% | 1.6% | [−0.10, 0.62] | 0.06 |
 
-Full table and Sharpe ratios by sub-period: [`reports/results.md`](reports/results.md).
+Full tables: [`reports/results.md`](reports/results.md) (performance, sub-periods)
+and [`reports/robustness.md`](reports/robustness.md) (bootstrap, split sample,
+sensitivity).
+
+![Bootstrap confidence intervals](reports/figures/bootstrap_ci.png)
 
 ![Drawdowns](reports/figures/drawdowns.png)
 
-**What this shows so far**
-- **Time-series carry has the best risk-adjusted return and much smaller
-  drawdowns than holding energy long.** It was positive in the 2008 H2 crash
-  (Sharpe +2.4, while the long-only portfolio was −3.8): steep contango warned
-  of oversupply before prices fell.
-- **But the evidence is weak.** A Sharpe ratio of 0.23 over 29 years gives a
-  t-statistic of about 1.2. On its own, that is not statistically significant.
-- **Cross-sectional carry does not work in this universe.** With only 4 highly
-  correlated contracts, and natural gas carry structurally negative because of
-  its seasonal curve (median −16% a year), the ranking mostly says "short gas".
-  That is a seasonal bet, not a carry bet.
-- **Momentum is weak on energy alone** and loses in sharp reversals (2008 H2,
-  2017–2019, 2020).
-- **Costs cost about 0.3–0.4% a year**, mostly from monthly rolls. That is a large
-  share of the gross premium.
+### What we can and cannot conclude
+- **Carry predicts energy futures returns, and seasonal adjustment matters.**
+  Removing the seasonal shape improves every carry strategy. The biggest change
+  is cross-sectional carry, from −0.03 to 0.33. Without adjustment, the ranking
+  mostly says "short gas", a seasonal bet rather than a carry bet.
+- **The effect is consistent but small.** TS and XS SA carry are positive in
+  both halves of the sample (Sharpe 0.40–0.42 in 1995–2009, 0.17–0.24 in
+  2010–2024). They survive every roll timing tested (1 to 10 days) and costs
+  up to 10 bps per side.
+- **It is not proven.** Bootstrap p-values are 0.05–0.07 and every 95% interval
+  still includes zero. Eight strategies were compared, and the seasonal
+  adjustment was added *after* seeing the cross-sectional result. Both inflate
+  the odds of a false positive.
+- **Cross-sectional SA carry is fragile to smoothing.** Its Sharpe is 0.08 with
+  no smoothing, −0.02 with 5 days, and 0.33–0.40 with 21–63 days.
+  Time-series SA carry is more stable (0.17–0.30).
+- **Momentum adds little on energy alone.** Holding energy long has a −52%
+  drawdown, versus about −20% for the carry strategies.
 
-These are honest first numbers, not a strategy to trade. The next steps aim to
-make the conclusions robust.
+**Bottom line:** in this small universe, carry is a plausible but statistically
+fragile premium. The honest next step is out-of-sample evidence: more
+commodities, or data after April 2024.
 
 ## Quick start
 
@@ -141,6 +162,7 @@ pip install -e ".[dev]"
 cp .env.example .env        # then paste your free EIA API key
 python scripts/download_data.py
 python scripts/run_backtest.py     # writes reports/results.md and figures
+python scripts/run_robustness.py   # bootstrap + sensitivity -> reports/robustness.md
 pytest
 ```
 
@@ -169,8 +191,10 @@ src/efc/
   portfolio.py         panel building, EWMA vol, position sizing, strategies
   backtest.py          no-look-ahead engine with rebalance and roll costs
   metrics.py           Sharpe, Sortino, drawdowns, VaR / ES, sub-periods
+  robustness.py        block-bootstrap Sharpe confidence intervals and p-values
 scripts/download_data.py
 scripts/run_backtest.py
+scripts/run_robustness.py
 reports/               results table and figures
 tests/                 unit tests on a synthetic market with known ground truth
 ```
@@ -182,17 +206,20 @@ tests/                 unit tests on a synthetic market with known ground truth
 - [x] Momentum signals and signal combination
 - [x] Backtest engine (vol targeting, transaction costs, no look-ahead)
 - [x] Risk and performance analytics (Sharpe, drawdown, VaR/ES, turnover)
-- [ ] Seasonally adjusted carry for natural gas (and refined products)
-- [ ] Statistical significance: block bootstrap of Sharpe ratios
-- [ ] Robustness: roll-day, lookback, cost and rebalancing-frequency sensitivity
+- [x] Seasonally adjusted carry for natural gas and refined products
+- [x] Statistical significance: block bootstrap of Sharpe ratios
+- [x] Robustness: roll-day, cost, smoothing and lookback sensitivity, split sample
+- [ ] Out-of-sample: extend the universe (Brent, metals, agriculture) or the sample past 2024
+- [ ] Multiple-testing correction (e.g. deflated Sharpe ratio)
 - [ ] Research notebook and write-up of findings
 
 ## Limitations
 - The sample ends on 5 April 2024, when EIA stopped publishing futures prices.
   Extending it would need another data source.
-- EIA publishes only 4 contracts, so the seasonal shape of the natural gas curve
-  (winter premium) contaminates the 1-to-2 month carry. A seasonally adjusted
-  carry is planned.
+- EIA publishes only 4 contracts, so carry is measured on the 1-to-2 month
+  spread. The seasonal adjustment uses past averages and cannot catch a seasonal
+  pattern that changes over time.
+- Seasonally adjusted signals need 3 years of history, so they start trading in 1997.
 - The universe is small (4 energy contracts). Cross-sectional results should be
   read with that in mind.
 - Settlement prices only: no intraday data and no bid/ask. Costs are modelled

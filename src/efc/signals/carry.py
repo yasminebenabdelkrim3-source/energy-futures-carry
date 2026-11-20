@@ -40,3 +40,37 @@ def carry_for_held(prices: pd.DataFrame, ranks: pd.Series) -> pd.Series:
     c23 = annualized_carry(prices, 2, 3) if "c3" in prices else c12
     out = c12.where(ranks.reindex(prices.index) == 1, c23)
     return out.rename("carry")
+
+
+def seasonal_adjusted_carry(carry: pd.Series, min_years: int = 3) -> pd.Series:
+    """Remove the average seasonal pattern of carry, using past years only.
+
+    Natural gas is in steep contango every autumn (cheap October gas vs expensive
+    winter gas) and in backwardation every late winter. That pattern is
+    predictable and says nothing about supply and demand *this* year. We estimate,
+    for each calendar month, how much carry typically deviates from its overall
+    average, and subtract that seasonal component:
+
+        adjusted_t = carry_t - (mean_past[carry | month(t)] - mean_past[carry])
+
+    "past" means calendar years strictly before the year of t, so no information
+    from the current year leaks into the adjustment. The first ``min_years`` years
+    are NaN (not enough history).
+    """
+    s = carry.dropna()
+    if s.empty:
+        return carry.copy()
+    monthly = s.groupby([s.index.year, s.index.month]).mean()
+    monthly.index.names = ["year", "month"]
+    table = monthly.unstack("month")  # rows: years, cols: calendar months
+
+    # expanding means over strictly earlier years
+    past_month_mean = table.expanding().mean().shift(1)
+    past_count = table.notna().cumsum().shift(1)
+    past_overall = table.stack().groupby(level=0).mean().expanding().mean().shift(1)
+    component = past_month_mean.sub(past_overall, axis=0).where(past_count >= min_years)
+
+    lookup = component.stack()  # Series indexed by (year, month)
+    keys = pd.MultiIndex.from_arrays([carry.index.year, carry.index.month])
+    values = lookup.reindex(keys).to_numpy(dtype=float)
+    return (carry - values).rename("carry_sa")

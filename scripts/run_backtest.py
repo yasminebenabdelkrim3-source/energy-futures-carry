@@ -7,7 +7,7 @@ Usage:
 Outputs:
     reports/results.md                 performance table + sub-period Sharpe ratios
     reports/figures/cumulative.png     cumulative net returns (log scale)
-    reports/figures/drawdowns.png      drawdowns, combined strategy vs long only
+    reports/figures/drawdowns.png      drawdowns, seasonally adjusted TS carry vs long only
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import matplotlib.ticker  # noqa: E402,F401
+import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from efc.backtest import run_backtest  # noqa: E402
@@ -53,8 +54,8 @@ COLORS = {
     "Long only": "#8a8a85",
     "TS carry": "#2a78d6",
     "XS carry": "#eb6834",
-    "TS momentum": "#1baf7a",
-    "Carry + momentum": "#eda100",
+    "TS carry SA": "#1baf7a",
+    "XS carry SA": "#eda100",
 }
 INK, MUTED, GRID = "#1f1f1e", "#6b6a64", "#e6e5e0"
 
@@ -139,13 +140,23 @@ def main() -> None:
 
     # Figure 1: cumulative net returns, log scale
     fig, ax = plt.subplots(figsize=(10, 5.2), dpi=150)
-    for name, r in results.items():
-        wealth = (1 + r.fillna(0)).cumprod()
+    ends = {}
+    for name in COLORS:
+        wealth = (1 + results[name].fillna(0)).cumprod()
         ls = (0, (4, 2)) if name == "Long only" else "-"
         ax.plot(wealth.index, wealth, color=COLORS[name], lw=1.6, ls=ls, label=name)
+        ends[name] = np.log10(wealth.iloc[-1])
+    # direct labels at the line ends, nudged apart so they never overlap
+    placed: list[tuple[str, float]] = []
+    for name, y in sorted(ends.items(), key=lambda kv: kv[1]):
+        if placed and y - placed[-1][1] < 0.022:
+            y = placed[-1][1] + 0.022
+        placed.append((name, y))
+    last = results["Long only"].index[-1]
+    for name, y in placed:
         ax.annotate(
-            name, (wealth.index[-1], wealth.iloc[-1]), xytext=(6, 0),
-            textcoords="offset points", va="center", fontsize=8, color=INK,
+            name, (last, 10**y), xytext=(6, 0), textcoords="offset points",
+            va="center", fontsize=8, color=INK,
         )
     ax.set_yscale("log")
     ax.yaxis.set_major_locator(matplotlib.ticker.FixedLocator([0.8, 1, 1.25, 1.5, 2, 3]))
@@ -164,7 +175,7 @@ def main() -> None:
 
     # Figure 2: drawdowns, combined strategy vs long only
     fig, ax = plt.subplots(figsize=(10, 3.6), dpi=150)
-    for name in ("Long only", "Carry + momentum"):
+    for name in ("Long only", "TS carry SA"):
         dd = drawdown(results[name])
         ls = (0, (4, 2)) if name == "Long only" else "-"
         ax.plot(dd.index, dd, color=COLORS[name], lw=1.4, ls=ls, label=name)
