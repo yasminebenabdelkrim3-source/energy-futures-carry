@@ -9,8 +9,8 @@ with time-series momentum, and how robust the result is across regimes:
 the 2008 crash, the 2014–16 oil glut, negative WTI in April 2020, and the
 2022 energy crisis.
 
-> Status: **work in progress**. Data pipeline and carry signal are in place.
-> The backtest and the research write-up come next (see [Roadmap](#roadmap)).
+> Status: **work in progress**. The data pipeline, signals, backtest engine and
+> first results are in place. Robustness tests come next (see [Roadmap](#roadmap)).
 
 ---
 
@@ -89,6 +89,47 @@ Cross-sectional and time-series carry, time-series momentum, and a combined
 signal; volatility-scaled positions; transaction costs; walk-forward evaluation;
 Sharpe ratio, drawdowns, turnover, VaR/ES; sub-period and parameter robustness.
 
+## First results
+
+Settings were fixed in advance from the literature, with nothing tuned on this
+data: monthly rebalancing, 10% ex-ante volatility per asset (60-day EWMA),
+leverage capped at 2x per asset, roll 5 trading days before expiry, 12-1 month
+momentum, 21-day smoothed carry, and **5 bps per side** on every rebalance and
+every roll. Sample: 1995-01 to 2024-04.
+
+![Cumulative net returns](reports/figures/cumulative.png)
+
+| Strategy | Sharpe | Ann. return | Ann. vol | Max DD | ES 99% (1d) | Cost drag / yr |
+|---|---:|---:|---:|---:|---:|---:|
+| Long only (equal risk) | 0.17 | 1.1% | 8.4% | −52.1% | 1.9% | 0.4% |
+| **TS carry** | **0.23** | 1.2% | 6.3% | −20.6% | 1.5% | 0.4% |
+| XS carry | −0.03 | −0.2% | 3.5% | −15.2% | 0.8% | 0.3% |
+| TS momentum | 0.07 | 0.2% | 7.4% | −37.6% | 1.6% | 0.4% |
+| Carry + momentum | 0.19 | 0.9% | 5.7% | −21.0% | 1.4% | 0.3% |
+
+Full table and Sharpe ratios by sub-period: [`reports/results.md`](reports/results.md).
+
+![Drawdowns](reports/figures/drawdowns.png)
+
+**What this shows so far**
+- **Time-series carry has the best risk-adjusted return and much smaller
+  drawdowns than holding energy long.** It was positive in the 2008 H2 crash
+  (Sharpe +2.4, while the long-only portfolio was −3.8): steep contango warned
+  of oversupply before prices fell.
+- **But the evidence is weak.** A Sharpe ratio of 0.23 over 29 years gives a
+  t-statistic of about 1.2. On its own, that is not statistically significant.
+- **Cross-sectional carry does not work in this universe.** With only 4 highly
+  correlated contracts, and natural gas carry structurally negative because of
+  its seasonal curve (median −16% a year), the ranking mostly says "short gas".
+  That is a seasonal bet, not a carry bet.
+- **Momentum is weak on energy alone** and loses in sharp reversals (2008 H2,
+  2017–2019, 2020).
+- **Costs cost about 0.3–0.4% a year**, mostly from monthly rolls. That is a large
+  share of the gross premium.
+
+These are honest first numbers, not a strategy to trade. The next steps aim to
+make the conclusions robust.
+
 ## Quick start
 
 ```bash
@@ -99,6 +140,7 @@ pip install -e ".[dev]"
 
 cp .env.example .env        # then paste your free EIA API key
 python scripts/download_data.py
+python scripts/run_backtest.py     # writes reports/results.md and figures
 pytest
 ```
 
@@ -123,7 +165,13 @@ src/efc/
   data/continuous.py   rolled front-month returns
   data/roll_detection.py  data-driven check and refinement of the expiry calendar
   signals/carry.py     annualised carry from the term structure
+  signals/momentum.py  time-series momentum (12-1)
+  portfolio.py         panel building, EWMA vol, position sizing, strategies
+  backtest.py          no-look-ahead engine with rebalance and roll costs
+  metrics.py           Sharpe, Sortino, drawdowns, VaR / ES, sub-periods
 scripts/download_data.py
+scripts/run_backtest.py
+reports/               results table and figures
 tests/                 unit tests on a synthetic market with known ground truth
 ```
 
@@ -131,10 +179,12 @@ tests/                 unit tests on a synthetic market with known ground truth
 - [x] Data pipeline (EIA, cache, expiry calendar, rolled returns)
 - [x] Data-driven validation of the expiry calendar
 - [x] Carry signal
-- [ ] Momentum signals and signal combination
-- [ ] Backtest engine (vol targeting, transaction costs, no look-ahead)
-- [ ] Risk and performance analytics (Sharpe, drawdown, VaR/ES, turnover)
-- [ ] Robustness: sub-periods, roll-day and lookback sensitivity
+- [x] Momentum signals and signal combination
+- [x] Backtest engine (vol targeting, transaction costs, no look-ahead)
+- [x] Risk and performance analytics (Sharpe, drawdown, VaR/ES, turnover)
+- [ ] Seasonally adjusted carry for natural gas (and refined products)
+- [ ] Statistical significance: block bootstrap of Sharpe ratios
+- [ ] Robustness: roll-day, lookback, cost and rebalancing-frequency sensitivity
 - [ ] Research notebook and write-up of findings
 
 ## Limitations
