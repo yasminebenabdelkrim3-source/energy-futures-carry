@@ -27,6 +27,16 @@ Daily settlement prices for contracts 1 to 4 come from the
 [EIA open-data API](https://www.eia.gov/opendata/) (free key). Business days
 are inferred from the data, so exchange holidays need no separate calendar.
 
+| Key           | Sample                  | Trading days |
+|---------------|-------------------------|-------------:|
+| `wti`         | 1985-01-02 → 2024-04-05 | 9,865 |
+| `natgas`      | 1994-01-13 → 2024-04-05 | 7,591 |
+| `rbob`        | 2005-10-03 → 2024-04-05 | 4,651 |
+| `heating_oil` | 1994-02-02 → 2024-04-05 | 7,566 |
+
+EIA stopped publishing NYMEX futures prices after 5 April 2024, so the sample
+ends there.
+
 ## Methodology
 
 ### 1. From "contract 1" labels to tradable returns
@@ -40,18 +50,41 @@ measures every daily return on the *same physical contract*. The position never
 holds a contract on its last trading day, which also avoids the delivery
 squeeze of 20 April 2020 (WTI at −37 USD/bbl).
 
-A built-in diagnostic (`roll_jump_diagnostics`) checks the inferred expiry
-calendar against the data. On a true roll day, today's `c1` should be close to
-yesterday's `c2`.
+### 2. Checking the calendar against the data
+Exchange rules have changed over time. For example, Henry Hub contracts
+expired 6 business days before delivery in the mid-1990s, versus 3 today.
+`efc.data.roll_detection` therefore checks every expiry against the prices.
+On the day after an expiry, each label moves down one contract. Today's
+c1..c3 then line up with yesterday's c2..c4, not with yesterday's c1..c3:
 
-### 2. Carry signal
+$$
+\text{score}_t=\frac{\operatorname{std}_r\big(\ln c_{r,t}-\ln c_{r,t-1}\big)}{\operatorname{std}_r\big(\ln c_{r,t}-\ln c_{r+1,t-1}\big)}
+$$
+
+The common market move cancels out of both terms, so the test still works on
+volatile days. Each expiry is labelled *confirmed*, *inconclusive* (flat curve)
+or *misaligned*. `refine_expiries` moves an expiry only when the data are
+unambiguous.
+
+| Commodity   | Confirmed | Inconclusive | Misaligned (rule) | Misaligned (refined) |
+|-------------|----------:|-------------:|------------------:|---------------------:|
+| WTI         | 387 | 65 | 19 | 0 |
+| Natural gas | 296 | 34 | 33 | 0 |
+| RBOB        | 207 | 11 |  4 | 0 |
+| Heating oil | 291 | 56 | 15 | 0 |
+
+Most natural gas corrections fall in 1994–1997, matching the older expiry rule.
+The largest remaining daily moves are real events (17 Jan 1991, 20–21 Apr 2020,
+Mar 2022), not roll artefacts.
+
+### 3. Carry signal
 $$
 \text{carry}_t = \frac{12}{m}\,\ln\frac{F^{\text{near}}_t}{F^{\text{far}}_t}
 $$
 Positive carry means backwardation and negative carry means contango. Inside the
 roll window the signal uses the c2/c3 spread, i.e. the contract actually held.
 
-### 3. Next: portfolio construction and evaluation
+### 4. Next: portfolio construction and evaluation
 Cross-sectional and time-series carry, time-series momentum, and a combined
 signal; volatility-scaled positions; transaction costs; walk-forward evaluation;
 Sharpe ratio, drawdowns, turnover, VaR/ES; sub-period and parameter robustness.
@@ -71,11 +104,11 @@ pytest
 
 ```python
 from efc.config import COMMODITIES
-from efc.data import load_prices, expiry_dates, held_rank, rolled_returns
+from efc.data import expiry_dates, held_rank, load_prices, refine_expiries, rolled_returns
 from efc.signals import carry_for_held
 
 px = load_prices("wti")
-exp = expiry_dates(px.index, COMMODITIES["wti"].expiry_rule)
+exp = refine_expiries(px, expiry_dates(px.index, COMMODITIES["wti"].expiry_rule))
 ret = rolled_returns(px, exp, roll_days=5)
 carry = carry_for_held(px, held_rank(px.index, exp, roll_days=5))
 ```
@@ -87,7 +120,8 @@ src/efc/
   config.py            commodity universe, EIA series ids, expiry rules
   data/eia.py          EIA API client with pagination + local CSV cache
   data/calendar.py     last-trading-day rules per contract
-  data/continuous.py   rolled front-month returns + calendar diagnostics
+  data/continuous.py   rolled front-month returns
+  data/roll_detection.py  data-driven check and refinement of the expiry calendar
   signals/carry.py     annualised carry from the term structure
 scripts/download_data.py
 tests/                 unit tests on a synthetic market with known ground truth
@@ -95,6 +129,7 @@ tests/                 unit tests on a synthetic market with known ground truth
 
 ## Roadmap
 - [x] Data pipeline (EIA, cache, expiry calendar, rolled returns)
+- [x] Data-driven validation of the expiry calendar
 - [x] Carry signal
 - [ ] Momentum signals and signal combination
 - [ ] Backtest engine (vol targeting, transaction costs, no look-ahead)
@@ -103,6 +138,8 @@ tests/                 unit tests on a synthetic market with known ground truth
 - [ ] Research notebook and write-up of findings
 
 ## Limitations
+- The sample ends on 5 April 2024, when EIA stopped publishing futures prices.
+  Extending it would need another data source.
 - EIA publishes only 4 contracts, so the seasonal shape of the natural gas curve
   (winter premium) contaminates the 1-to-2 month carry. A seasonally adjusted
   carry is planned.

@@ -68,24 +68,3 @@ def rolled_returns(
             out[t] = p_now / p_prev - 1.0
     return pd.Series(out, index=prices.index, name="ret")
 
-
-def roll_jump_diagnostics(prices: pd.DataFrame, expiries: pd.DatetimeIndex) -> pd.DataFrame:
-    """Sanity check of the expiry calendar against the data.
-
-    On the day after a true expiry, today's c1 should match yesterday's c2 much
-    better than yesterday's c1. A high ``mismatch`` flag means the inferred
-    expiry date is probably wrong for that month.
-    """
-    after = prices.index[pd.Series(prices.index).shift(1).isin(expiries).to_numpy()]
-    rows = []
-    for d in after:
-        t = prices.index.get_loc(d)
-        c1_now = prices["c1"].iloc[t]
-        c1_prev, c2_prev = prices["c1"].iloc[t - 1], prices["c2"].iloc[t - 1]
-        same = abs(np.log(c1_now / c1_prev)) if c1_now > 0 and c1_prev > 0 else np.nan
-        shifted = abs(np.log(c1_now / c2_prev)) if c1_now > 0 and c2_prev > 0 else np.nan
-        rows.append({"date": d, "gap_vs_old_c1": same, "gap_vs_old_c2": shifted})
-    diag = pd.DataFrame(rows).set_index("date") if rows else pd.DataFrame()
-    if not diag.empty:
-        diag["mismatch"] = diag["gap_vs_old_c2"] > diag["gap_vs_old_c1"]
-    return diag

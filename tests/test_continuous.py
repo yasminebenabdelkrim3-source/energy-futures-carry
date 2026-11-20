@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from efc.data.continuous import held_rank, roll_jump_diagnostics, rolled_returns
+from efc.data.continuous import held_rank, rolled_returns
 
 
 def test_held_rank_window(market):
@@ -52,17 +52,3 @@ def test_negative_prices_do_not_break_returns(market):
     # we were holding c2 on expiry day, so the negative c1 never enters returns
     assert ret.loc[e] == pytest.approx(prices.loc[e, "c2"] / prices["c2"].shift(1).loc[e] - 1)
 
-
-def test_diagnostics_flag_no_mismatch_on_clean_data(market):
-    prices, expiries, *_ = market
-    diag = roll_jump_diagnostics(prices, expiries)
-    assert len(diag) == len(expiries)
-    assert diag["mismatch"].mean() < 0.2
-
-
-def test_diagnostics_detect_wrong_calendar(market):
-    prices, expiries, *_ = market
-    wrong = expiries - pd.offsets.BDay(2)
-    diag = roll_jump_diagnostics(prices, wrong)
-    # with a wrong calendar the "shift" explanation is no better than chance
-    assert diag["mismatch"].mean() > 0.3
